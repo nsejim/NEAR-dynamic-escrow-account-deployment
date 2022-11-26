@@ -1,125 +1,159 @@
 // Find all our documentation at https://docs.near.org
 import { NearBindgen, near, call, view, initialize, assert } from 'near-sdk-js';
-import { Mission, MissionStatus } from './models/mission';
+import { Mission, MissionStatus, IMission } from './models/mission';
+
+const YOCTO = BigInt("1000000000000000000000000") as bigint;
 @NearBindgen({ requireInit: true })
-class DevshopEscrow {
-  
+export class DevshopEscrow {
+
   admin: string = "";
-  mission: Mission = null;
-  minDeposit: bigint = 0 as unknown as bigint;
-  percentageAdmin: bigint = 0 as unknown as bigint;
+  mission: Mission = new Mission(null, null, null, null, null, null);
 
   @initialize({})
-  init({
-    percentageAdmin,
-    minDeposit
-  }) {
+  @call({ payableFunction: true })
+  createMission({
+    clientWallet,
+    talentWallet,
+    missionContentHash,
+    dueDate,
+    percentageAdmin
+  }: IMission) {
+
     assert(!this.admin, "Contract already initialized")
-    assert(percentageAdmin < 100, "Percentage should be between 0 and 100")
+
     this.admin = near.signerAccountId();
-    this.percentageAdmin = percentageAdmin;
-    this.minDeposit = minDeposit;
+    near.log('Escrow contract initialized')
+
+    const amount = near.attachedDeposit()
+    assert(amount > 0, 'The attached deposit should be greater than zero')
+
+    this.mission = new Mission(
+      clientWallet,
+      talentWallet,
+      missionContentHash,
+      Number(String(amount).slice(0, -24)),
+      dueDate,
+      percentageAdmin);
+
+    near.log(`Mission created, waiting the talent to accept`)
   }
 
   @call({})
-  createMission(missionData: {
-    clientWallet: string,
-    talentWallet: string,
-    missionContentHash: string,
-    dueDate: string
-  }) {
-    assert(near.signerAccountId() === this.admin, 'Only admin can sign this call')
-    assert(near.predecessorAccountId() === missionData.clientWallet, 'Only client can request to create a mission')
-    assert(near.attachedDeposit() > this.minDeposit, 'The attached deposit is below the minimum amount required to initialise mission')
+  acceptMission() {
+
+    // assert(near.signerAccountId() === this.admin, 'Only admin can call this method')
+    assert(near.predecessorAccountId() === this.mission.talentWallet, 'Only talent can accept mission')
+    assert(this.mission.status === MissionStatus.WaitingTalentAcceptance, "Mission must be in a status waiting acceptance")
+
+    this.mission.status = MissionStatus.Accepted;
+    this.mission.acceptedOn = near.blockTimestamp();
+    near.log(`Talent accepted the mission`)
     
-    this.mission = new Mission(
-      missionData.clientWallet,
-      missionData.talentWallet,
-      missionData.missionContentHash,
-      near.attachedDeposit(),
-      missionData.dueDate,
-      this.percentageAdmin);
+  }
 
-    near.log(`Mission created, waiting the talent to accept`)
-   }
+  @call({})
+  startMission() {
 
+    // assert(near.signerAccountId() === this.admin, 'Only admin can call this method')
+    assert(near.predecessorAccountId() === this.mission.clientWallet, 'Only client can start the mission')
+    assert(this.mission.status === MissionStatus.Accepted, "Mission must have been accepted by talent to start")
 
-   @call({})
-   startMission() {
-      assert(near.signerAccountId() === this.admin, 'Only admin can sign this call')
-      assert(near.predecessorAccountId() === this.mission.clientWallet, 'Only client can order payment')
-      assert(this.mission.status === MissionStatus.Accepted, "Mission must be accepted by talent to start")
-
-      near.log(`Make the contract active`)
-      this.mission.changeStatus(MissionStatus.Active);
-   }
+    this.mission.status = MissionStatus.Active;
+    this.mission.activeSince = near.blockTimestamp();
+    near.log(`The contract is now active`)
+   
+  }
 
 
-   @call({})
-   cancelMission() {
-      assert(near.signerAccountId() === this.admin, 'Only admin can sign this call')
-      assert((near.predecessorAccountId() === this.mission.clientWallet) || (near.predecessorAccountId() === this.mission.talentWallet), 'Either client or talent can cancel mission')
+  @call({})
+  cancelMission() {
+    // assert(near.signerAccountId() === this.admin, 'Only admin can call this method')
+    assert((near.predecessorAccountId() === this.mission.clientWallet) || (near.predecessorAccountId() === this.mission.talentWallet), 'Only either client or talent can cancel mission')
+    assert(this.mission.status !== MissionStatus.Completed, "Mission must not be completed")
+    
+    this.mission.status = MissionStatus.Cancelled;
+    this.mission.cancelledOn = near.blockTimestamp();
+    near.log(`The contract status is set to cancelled`)
 
-      near.log(`Processing cancellation`)
-      this.mission.changeStatus(MissionStatus.Cancelled);
+    near.log(`The account balance is reimbursed to the client`)
+  }
 
-      // Payback Client
-      this._sendNEAR({
-        receivingAccountId: this.mission.clientWallet,
-        amount: near.accountBalance()
-      })
-   }
+  @call({})
+  completeMission() {
 
-   @call({}) 
-   setCompleted(){
-    assert(near.signerAccountId() === this.admin, 'Only admin can sign this call')
+    // assert(near.signerAccountId() === this.admin, 'Only admin can call this method')
     assert(near.predecessorAccountId() === this.mission.talentWallet, 'Only talent can confirm the he/she completed the mission')
     assert(this.mission.status === MissionStatus.Active, "Mission must be active to set it to completed")
-    
-    this.mission.changeStatus(MissionStatus.Completed);
+
+    this.mission.status = MissionStatus.Completed;
+    this.mission.completedOn = near.blockTimestamp();
     near.log(`Mission set to completed`)
 
-   }
+  }
 
-   @call({})
-   payMission() {
-      assert(near.signerAccountId() === this.admin, 'Only admin can sign this call')
-      assert(near.predecessorAccountId() === this.mission.clientWallet, 'Only client can order payment')
-      assert(this.mission.status === MissionStatus.Completed, "Mission has to be completed to process the payment")
-      assert(near.accountBalance() >= this.mission.clientDeposit, "Not enough balance to pay")
+  @call({})
+  payMission() {
 
-      near.log(`Processing mission payment`)
+    // assert(near.signerAccountId() === this.admin, 'Only admin can call this method')
+    assert(near.predecessorAccountId() === this.mission.clientWallet, 'Only client can order payment')
+    assert(this.mission.status === MissionStatus.Completed, "Mission has to be completed to process the payment")
+    assert(near.accountBalance() >= this.mission.clientDeposit, "Not enough balance to pay")
 
-      // Pay Talent
-      this._sendNEAR({
-        receivingAccountId: this.mission.talentWallet,
-        amount: this.mission.amountToPayTalent
-      })
+    near.log(`NEAR token to transfer to talent: ${this.mission.tokenToPayTalent}`)
+    this._transferToken({
+      receivingAccountId: this.mission.talentWallet,
+      amount: BigInt(this.mission.tokenToPayTalent) * YOCTO
+    })
+    near.log(`Talent paid`)
 
-      // Pay Admin
-      this._sendNEAR({
-        receivingAccountId: this.admin,
-        amount: this.mission.amountToPayAdmin
-      })
+    near.log(`NEAR token commission to transfer to admin: ${this.mission.tokenToPayAdmin}`)
+    this._transferToken({
+      receivingAccountId: this.admin,
+      amount: BigInt(this.mission.tokenToPayAdmin) * YOCTO
+    })
+    near.log(`Admin commission paid`)
 
-      this.mission.changeStatus(MissionStatus.Paid);
+    this.mission.status = MissionStatus.Paid;
+  }
 
-      // Payback Client
-      this._sendNEAR({
-        receivingAccountId: this.mission.clientWallet,
-        amount: near.accountBalance()
-      })
-   }
+  @call({})
+  deleteContract() {
+    assert(near.predecessorAccountId() === this.admin, 'Only admin can delete this contract')
+    assert(this.mission.status === MissionStatus.Paid || this.mission.status === MissionStatus.Cancelled, "Mission contract state is not valid")
+    const promise = near.promiseBatchCreate(near.currentAccountId());
+    near.promiseBatchActionDeleteAccount(
+      promise,
+      this.admin
+    )
+    return near.promiseReturn(promise)
+  }
 
-   @view({})
-   viewMission(): Mission {
+  @view({})
+  getMission(): IMission {
+    near.log('`Get mission data')
     return this.mission;
-   }
+  }
 
-   _sendNEAR({receivingAccountId, amount}) {
-      const promise = near.promiseBatchCreate(receivingAccountId);
-      near.promiseBatchActionTransfer(promise, amount);
-      near.log(`${amount} transferred to ${receivingAccountId}`)
-      return near.promiseReturn(promise);
-   }
+  @view({})
+  getAdmin(): string {
+    near.log('`Get admin')
+    return this.admin;
+  }
+
+  _transferToken({ receivingAccountId, amount }: {
+    receivingAccountId: string;
+    amount: bigint
+  }) {
+
+    const promise = near.promiseBatchCreate(receivingAccountId);
+    near.promiseBatchActionTransfer(
+      promise,
+      amount
+    )
+
+    this.mission.status = MissionStatus.Paid;
+
+    return near.promiseReturn(promise)
+  }
+
 }

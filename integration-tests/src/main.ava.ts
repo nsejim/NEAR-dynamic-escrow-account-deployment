@@ -1,5 +1,6 @@
-import { Worker, NearAccount } from 'near-workspaces';
+import { Worker, NearAccount, NEAR } from 'near-workspaces';
 import anyTest, { TestFn } from 'ava';
+import * as path from 'path';
 
 const test = anyTest as TestFn<{
   worker: Worker;
@@ -12,15 +13,22 @@ test.beforeEach(async (t) => {
 
   // Deploy contract
   const root = worker.rootAccount;
-  const contract = await root.createSubAccount('test-account');
+
+  const contract = await root.createSubAccount('devshop');
+
   // Get wasm file path from package.json test script in folder above
   await contract.deploy(
-    process.argv[2],
+    "/Users/nsejim/Documents/Workdir/near-escrow/escrow-js-vanilla/contracts/devshop-main/build/devshop_main.wasm"
   );
+
+  const client = await root.createSubAccount('client', {
+    initialBalance: NEAR.parse("1000 N").toJSON(),
+  });
+  const talent = await root.createSubAccount('talent');
 
   // Save state for test runs, it is unique for each test
   t.context.worker = worker;
-  t.context.accounts = { root, contract };
+  t.context.accounts = { root, contract, client, talent};
 });
 
 test.afterEach.always(async (t) => {
@@ -30,15 +38,33 @@ test.afterEach.always(async (t) => {
   });
 });
 
-test('returns the default greeting', async (t) => {
-  const { contract } = t.context.accounts;
-  const message: string = await contract.view('get_greeting', {});
-  t.is(message, 'Hello');
-});
+/*test('contract initialised', async(t) => {
+  // Arrange
+  const { contract, client, talent, root } = t.context.accounts;
 
-test('changes the message', async (t) => {
-  const { root, contract } = t.context.accounts;
-  await root.call(contract, 'set_greeting', { message: 'Howdy' });
-  const message: string = await contract.view('get_greeting', {});
-  t.is(message, 'Howdy');
-});
+
+  const missionId = "111111";
+  // Act
+  await client.call(
+    contract.accountId,
+    'createMission',
+    {
+      missionId,
+      talentWallet: talent.accountId,
+      missionContentHash: "",
+      dueDate: "22/11/2022"
+    }, {
+      attachedDeposit: NEAR.parse("500 N").toJSON(),
+      gas: '300000000000000'
+    }
+  )
+
+  // Assert
+  const missions = JSON.parse(await contract.view("getMissions", {} ));
+
+  console.log(missions)
+
+  t.is(missions.length, 1, "Should contains one mission")
+})
+*/
+

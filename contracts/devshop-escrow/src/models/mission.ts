@@ -1,5 +1,14 @@
 import { near, assert } from 'near-sdk-js';
 
+
+export interface IMission {
+    clientWallet: string,
+    talentWallet: string,
+    missionContentHash: string,
+    dueDate: string,
+    percentageAdmin: number
+}
+
 export enum MissionStatus {
     WaitingTalentAcceptance = 0,
     Accepted=1,
@@ -13,54 +22,38 @@ export enum MissionStatus {
 }
 
 export class Mission {
-    status: MissionStatus;
-    amountToPayTalent: bigint;
-    amountToPayAdmin: bigint;
+    public status: MissionStatus;
+    tokenToPayTalent: number;
+    tokenToPayAdmin: number;
     createdOn: bigint;
-    acceptedOn: bigint;
-    activeSince: bigint;
-    cancelledOn: bigint;
-    completedOn: bigint;
-    paidOn: bigint;
-  
+    public acceptedOn: bigint;
+    public activeSince: bigint;
+    public cancelledOn: bigint;
+    public completedOn: bigint;
+    public paidOn: bigint;
+
     constructor(
         public clientWallet: string,
         public talentWallet: string,
         public missionContentHash: string,
-        public clientDeposit: bigint,
+        public clientDeposit: number,
         public dueDate: string,
-        public percentageAdmin: bigint
+        public percentageAdmin: number
     ) {
-        assert(percentageAdmin < 100, "Percentage should be between 0 and 100")
+        assert(percentageAdmin >= 0 as unknown as bigint, "Percentage should be between 0 and 100")
+        assert(percentageAdmin <= 100 as unknown as bigint, "Percentage should be between 0 and 100")
+    
         this.createdOn = near.blockTimestamp();
         this.status = MissionStatus.WaitingTalentAcceptance;
         
-        const rate = percentageAdmin/(100 as unknown as bigint);
-        this.amountToPayAdmin =  rate * this.clientDeposit;
-        this.amountToPayTalent = (1 as unknown as bigint - rate) * this.clientDeposit;
-    }
+        near.log(`percentageAdmin: ${ percentageAdmin }`)
+        near.log(`clientDeposit: ${ clientDeposit }`)
 
-    changeStatus = (newStatus: MissionStatus) => {
-        this.status = newStatus;
-        switch (newStatus) {
-            case MissionStatus.Accepted:
-                this.acceptedOn = near.blockTimestamp();
-                break;
-            case MissionStatus.Active:
-                    this.activeSince = near.blockTimestamp();
-                    break;
-            case MissionStatus.Cancelled:
-                this.cancelledOn = near.blockTimestamp();
-                break;
-            case MissionStatus.Completed:
-                this.completedOn = near.blockTimestamp();
-                break;
-            case MissionStatus.Paid:
-                this.paidOn = near.blockTimestamp();
-                 break;
-            default:
-                break;
-        }
+        this.tokenToPayAdmin =  percentageAdmin/100 *  clientDeposit;
+        this.tokenToPayTalent = clientDeposit - this.tokenToPayAdmin;
+
+        near.log(`tokenToPayAdmin: ${ this.tokenToPayAdmin }`)
+        near.log(`tokenToPayTalent: ${ this.tokenToPayTalent }`)
     }
 
   }
