@@ -7,17 +7,20 @@ const NO_DEPOSIT = BigInt(0);
 const NO_ARGS = bytes(JSON.stringify({}));
 @NearBindgen({})
 class DevshopMain {
+
   missions: Vector<{
     missionId: string,
     clientWallet: string,
-    talentWallet: string
+    talentWallet: string,
+    accountId: string
   }>;
 
   constructor() {
     this.missions = new Vector<{
       missionId: string,
       clientWallet: string,
-      talentWallet: string
+      talentWallet: string,
+      accountId: string
     }>('m');
   }
 
@@ -53,8 +56,7 @@ class DevshopMain {
         talentWallet,
         missionContentHash,
         dueDate,
-        percentageAdmin: 0 as unknown as bigint,
-        minDeposit: 0 as unknown as bigint
+        percentageAdmin: 10 as unknown as bigint
       })),
       amount,
       100000000000000
@@ -68,6 +70,7 @@ class DevshopMain {
         missionId,
         talentWallet,
         clientWallet: near.predecessorAccountId(),
+        accountId: `${missionId}.${near.currentAccountId()}`
       })),
       0,
       30000000000000
@@ -80,60 +83,35 @@ class DevshopMain {
   _on_successfull_mission_create({ 
     missionId,
     talentWallet,
-    clientWallet
+    clientWallet,
+    accountId
    }) {
     this.missions.push({ 
       missionId,
       talentWallet,
-      clientWallet
+      clientWallet,
+      accountId
      })
   }
 
   @view({})
   getMissions({
     accountId, 
-    initDataOnly
+    active
   }: {
     accountId?: string, 
-    active?: boolean, 
-    initDataOnly?: boolean
-  }): string {
+    active?: boolean
+  }) {
       if (accountId) {
-        return JSON.stringify(this.missions.toArray().filter(mission => {
+        return this.missions.toArray().filter(mission => {
           return mission.clientWallet === accountId || mission.talentWallet === accountId
-        }))
+        })
       }
-      return JSON.stringify(this.missions.toArray().map(async (mission) => {
-        if (initDataOnly) {
-          return {
-            ...mission,
-            initData: this._getMissionInitData(mission.missionId)
-          }
-        }
-        return {
-          ...mission,
-          ...JSON.parse(await this._getMissionData(mission.missionId))
-        }
-      }))
-  }
-
-  _getMissionInitData(missionId: string): NearPromise {
-    const promise = NearPromise.new(`${missionId}.${near.currentAccountId()}`)
-    .functionCall("getInitData", NO_ARGS, NO_DEPOSIT, DEFAULT_TGAS)    
-    return promise.asReturn();
-  }
-
-  _getMissionData(missionId: string): string {
-    const promise = near.promiseBatchCreate(`${missionId}.${near.currentAccountId()}`);
-    near.promiseBatchActionFunctionCall(
-      promise,
-      "getMission",
-      NO_ARGS, NO_DEPOSIT, DEFAULT_TGAS
-    );  
-    return near.promiseResult(promise);
+      return this.missions.toArray()
   }
 
   _checkUniqueMissionId(missionId: string): boolean {
     return !this.missions.toArray().find(mission => mission.missionId === missionId);
   }
+
 }

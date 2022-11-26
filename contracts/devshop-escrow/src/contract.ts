@@ -4,7 +4,7 @@ import { Mission, MissionStatus, IMission } from './models/mission';
 
 const YOCTO = BigInt("1000000000000000000000000") as bigint;
 @NearBindgen({ requireInit: true })
-export class DevshopEscrow {
+class DevshopEscrow {
 
   admin: string = "";
   mission: Mission = new Mission(null, null, null, null, null, null);

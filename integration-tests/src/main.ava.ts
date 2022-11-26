@@ -1,6 +1,5 @@
 import { Worker, NearAccount, NEAR } from 'near-workspaces';
 import anyTest, { TestFn } from 'ava';
-import * as path from 'path';
 
 const test = anyTest as TestFn<{
   worker: Worker;
@@ -14,7 +13,7 @@ test.beforeEach(async (t) => {
   // Deploy contract
   const root = worker.rootAccount;
 
-  const contract = await root.createSubAccount('devshop');
+  const contract = await root.createSubAccount('main');
 
   // Get wasm file path from package.json test script in folder above
   await contract.deploy(
@@ -38,10 +37,9 @@ test.afterEach.always(async (t) => {
   });
 });
 
-/*test('contract initialised', async(t) => {
+test('Test mission contract initialisation', async(t) => {
   // Arrange
-  const { contract, client, talent, root } = t.context.accounts;
-
+  const { root, contract, client, talent} = t.context.accounts;
 
   const missionId = "111111";
   // Act
@@ -60,11 +58,76 @@ test.afterEach.always(async (t) => {
   )
 
   // Assert
-  const missions = JSON.parse(await contract.view("getMissions", {} ));
+  const missions: any = await contract.view("getMissions", {} );
+  const missionAccountId = `${missionId}.${contract.accountId}`;
 
-  console.log(missions)
+  t.true(missions && (missions.length === 1), "Mission not created")
+  t.is(missions[0].accountId, missionAccountId, "Mission not found")
 
-  t.is(missions.length, 1, "Should contains one mission")
+  const missionAccount = root.getAccount(missionAccountId)
+  t.true(await missionAccount.exists(), "Mission contract doesn't exist")
 })
-*/
 
+
+test('Test mission contract state', async(t) => {
+
+    // Arrange
+    const { root, contract, client, talent} = t.context.accounts;
+    const costMission = 500; // NEAR tokens
+    const percentageAdmin = 10; // 10%
+
+    const missionId = "111111";
+    // Act
+    await client.call(
+      contract.accountId,
+      'createMission',
+      {
+        missionId,
+        talentWallet: talent.accountId,
+        missionContentHash: "",
+        dueDate: "22/11/2022"
+      }, {
+        attachedDeposit: NEAR.parse(costMission.toString() + " N").toJSON(),
+        gas: '300000000000000'
+      }
+    )
+
+    const missionAccountId = `${missionId}.${contract.accountId}`;
+    const missionAccount = root.getAccount(missionAccountId)
+    
+    const mission: any = await missionAccount.view("getMission")
+    t.is(mission.clientDeposit, costMission, "Deposit amount doesn't match")
+    t.is(mission.tokenToPayTalent, costMission * (1 - percentageAdmin/100), "Wrong amount to pay the talent")
+    t.is(mission.tokenToPayAdmin, costMission * (percentageAdmin/100), "Wrong commission for admin")
+    t.is(mission.status, 0, "Wrong status of the contract")
+
+})
+
+
+test('Test mission contract is locked', async(t)=> {
+   // Arrange
+   const { root, contract, client, talent} = t.context.accounts;
+   const costMission = 500; // NEAR tokens
+   const percentageAdmin = 10; // 10%
+
+   const missionId = "111111";
+   // Act
+   await client.call(
+     contract.accountId,
+     'createMission',
+     {
+       missionId,
+       talentWallet: talent.accountId,
+       missionContentHash: "",
+       dueDate: "22/11/2022"
+     }, {
+       attachedDeposit: NEAR.parse(costMission.toString() + " N").toJSON(),
+       gas: '300000000000000'
+     }
+   )
+
+   const missionAccountId = `${missionId}.${contract.accountId}`;
+   const missionAccount = root.getAccount(missionAccountId)
+
+   t.is(await missionAccount.getKey(), null , "Contract is not locked")
+})
