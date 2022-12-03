@@ -7,7 +7,7 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-echo ">> Deploying contract"
+echo ">> Deploying contract to " $CONTRACT_NAME
 
 # https://docs.near.org/tools/near-cli#near-dev-deploy
-near dev-deploy --wasmFile build/devshop_main.wasm
+near deploy --wasmFile build/devshop_main.wasm --accountId $CONTRACT_NAME

@@ -1,0 +1,1 @@
+near call main-escrow.nsejim.testnet createMission '{"missionId": "1111", "talentWallet":"nsejim.testnet", "missionContextHash": "", "dueDate": "22/11/2022"}' --accountId nsejim.testnet  --amount 20 --gas 300000000000000
